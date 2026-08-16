@@ -1,0 +1,647 @@
+####################################################################################################
+# FILE 1
+# PATH: .gitignore
+####################################################################################################
+
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+.vscode/
+logs/
+data/
+*.csv
+*.parquet
+
+####################################################################################################
+# FILE 2
+# PATH: pyproject.toml
+####################################################################################################
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "indian-options-god-mode"
+version = "5.1.0-rc1"
+description = "Institutional-grade Quantitative MCP for Indian Options"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=0.1",
+    "nsepython>=1.0",
+    "yfinance>=0.2",
+    "scipy>=1.10",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "arch>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+####################################################################################################
+# FILE 3
+# PATH: README.md
+####################################################################################################
+
+## Indian Options God Mode MCP v5.1.0-rc1
+
+A professional-grade Model Context Protocol (MCP) server for Indian Options (NSE) valuation. This system acts as a quantitative research assistant, providing volatility analysis, tail risk metrics, and dealer positioning proxies.
+
+### Core Principles
+- **No Hallucinations:** If NSE data is unavailable, the system returns `null` with a `DATA_UNAVAILABLE` status. It never substitutes missing quantitative values with `0`.
+- **Provenance & Classification:** Every output tracks rows received, rejected, and explicitly classifies data as `OBSERVED`, `DERIVED`, `INFERRED`, or `ASSUMED`.
+- **Asumption Transparency:** Dealer GEX is labeled as `Model_GEX_Proxy` because actual dealer books are unavailable.
+
+### What this system does NOT know
+- Dealer inventory
+- Customer/dealer identity
+- Actual dealer delta/gamma
+- OTC or structured positions
+
+Therefore, GEX is an inferred positioning proxy under a hypothetical inventory assumption, not observed dealer exposure.
+
+### Setup
+```bash
+pip install -e .
+pytest tests/
+python -m indian_options_god_mode.mcp_server
+```
+
+####################################################################################################
+# FILE 4
+# PATH: requirements.txt
+####################################################################################################
+
+mcp>=0.1
+nsepython>=1.0
+yfinance>=0.2
+scipy>=1.10
+numpy>=1.24
+pandas>=2.0
+arch>=6.0
+pytest>=7.0
+
+####################################################################################################
+# FILE 5
+# PATH: src/indian_options_god_mode/__init__.py
+####################################################################################################
+
+# Indian Options God Mode Package
+
+####################################################################################################
+# FILE 6
+# PATH: src/indian_options_god_mode/config.py
+####################################################################################################
+
+class Config:
+    RISK_FREE_RATE = 0.07       # Static config
+    DIVIDEND_YIELD = 0.0
+    LOT_SIZE = 25               # Static config
+    MARKET_CLOSE_HOUR = 15
+    MARKET_CLOSE_MINUTE = 30
+    
+    EVT_THRESHOLD_PERCENTILE = 0.95
+    
+    # Data Quality
+    MIN_OI = 500
+    MIN_BID = 0.05
+    MAX_SPREAD_PCT = 0.50       # Reject options where bid-ask spread > 50% of mid
+    MAX_DELTA_DISTANCE = 0.05   # Max distance from target delta for IV surface
+
+####################################################################################################
+# FILE 7
+# PATH: src/indian_options_god_mode/quant_engine.py
+####################################################################################################
+
+import numpy as np
+from datetime import datetime, time, date
+from zoneinfo import ZoneInfo
+from scipy.stats import norm
+from scipy.optimize import brentq
+from .config import Config
+
+IST = ZoneInfo("Asia/Kolkata")
+
+def get_exact_time_to_expiry(expiry_date_str: str) -> float:
+    """Calculates exact time to expiry in years. Raises ValueError on malformed date."""
+    try:
+        try: exp_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+        except ValueError: exp_date = datetime.strptime(expiry_date_str, '%d-%b-%Y').date()
+    except ValueError as e:
+        raise ValueError(f"INVALID_EXPIRY_FORMAT: {expiry_date_str}") from e
+        
+    expiry_dt = datetime.combine(exp_date, time(Config.MARKET_CLOSE_HOUR, Config.MARKET_CLOSE_MINUTE), tzinfo=IST)
+    now = datetime.now(IST)
+    
+    if expiry_dt <= now: return 0.0
+        
+    seconds_remaining = (expiry_dt - now).total_seconds()
+    seconds_in_year = 365.25 * 24 * 3600  # ACT/365.25 convention
+    return seconds_remaining / seconds_in_year
+
+def d1(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+
+def bs_delta(S, K, T, r, sigma, option_type='call', q=0.0):
+    if T <= 0 or sigma <= 0: return 0.0
+    d1_val = d1(S, K, T, r, sigma, q)
+    return np.exp(-q * T) * (norm.cdf(d1_val) if option_type == 'call' else -norm.cdf(-d1_val))
+
+def bs_gamma(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return np.exp(-q * T) * norm.pdf(d1(S, K, T, r, sigma, q)) / (S * sigma * np.sqrt(T))
+
+def bs_vanna(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    d2_val = d1(S, K, T, r, sigma, q) - sigma * np.sqrt(T)
+    return -np.exp(-q * T) * norm.pdf(d2_val) / sigma
+
+def bs_charm(S, K, T, r, sigma, option_type='call', q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    d1_val = d1(S, K, T, r, sigma, q)
+    d2_val = d1_val - sigma * np.sqrt(T)
+    charm = -np.exp(-q * T) * norm.pdf(d1_val) * (2*(r-q)*T - d2_val * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
+    return (charm if option_type == 'call' else -charm) / 365
+
+def calculate_implied_vol(market_price, S, K, T, r, option_type='call', q=0.0):
+    """Brentq solver with strict no-arbitrage bounds."""
+    if market_price <= 0 or T <= 0: return np.nan
+    
+    # No-arbitrage bounds check
+    intrinsic = max(0, S * np.exp(-q*T) - K * np.exp(-r*T)) if option_type == 'call' else max(0, K * np.exp(-r*T) - S * np.exp(-q*T))
+    if market_price < intrinsic:
+        return np.nan  # Price violates BS no-arbitrage bounds
+        
+    def objective(sigma): 
+        d1_val = d1(S, K, T, r, sigma, q)
+        d2_val = d1_val - sigma * np.sqrt(T)
+        if option_type == 'call':
+            p = S * np.exp(-q * T) * norm.cdf(d1_val) - K * np.exp(-r * T) * norm.cdf(d2_val)
+        else:
+            p = K * np.exp(-r * T) * norm.cdf(-d2_val) - S * np.exp(-q * T) * norm.cdf(-d1_val)
+        return p - market_price
+        
+    try: return brentq(objective, 0.001, 5.0)
+    except ValueError: return np.nan
+
+def calculate_gex_at_spot(S_hyp, options_list, T, r, q, lot_size):
+    """Helper for Gamma Flip root finding."""
+    total_gex = 0
+    for opt in options_list:
+        gamma = bs_gamma(S_hyp, opt['K'], T, r, opt['iv'], q)
+        gex = opt['sign'] * gamma * opt['oi'] * lot_size * (S_hyp**2) * 0.01
+        total_gex += gex
+    return total_gex
+
+####################################################################################################
+# FILE 8
+# PATH: src/indian_options_god_mode/data_fetcher.py
+####################################################################################################
+
+import pandas as pd
+import yfinance as yf
+from nsepython import nse_optionchain_scraper
+
+def _format_ticker(symbol: str) -> str:
+    s = symbol.replace("^", "").replace(".NS", "")
+    if s == "NSEI": return "NIFTY"
+    if s == "NSEBANK": return "BANKNIFTY"
+    return s
+
+def get_expirations(symbol: str) -> list[str]:
+    try: return nse_optionchain_scraper(_format_ticker(symbol))['records']['expiryDates']
+    except Exception: return []
+
+def get_spot(symbol: str) -> float | None:
+    try: return float(nse_optionchain_scraper(_format_ticker(symbol))['records']['underlyingValue'])
+    except Exception: return None
+
+def fetch_option_chain_df(symbol: str, expiry: str) -> pd.DataFrame:
+    payload = nse_optionchain_scraper(_format_ticker(symbol))
+    records = payload['records']['data']
+    filtered = [r for r in records if r['expiryDate'] == expiry]
+    
+    rows = []
+    for r in filtered:
+        if 'CE' in r:
+            rows.append({'strike': r['strike'], 'option_type': 'call', 'bid': r['CE'].get('bidPrice', 0), 
+                         'ask': r['CE'].get('askPrice', 0), 'lastPrice': r['CE'].get('lastPrice', 0), 
+                         'openInterest': r['CE'].get('openInterest', 0)})
+        if 'PE' in r:
+            rows.append({'strike': r['strike'], 'option_type': 'put', 'bid': r['PE'].get('bidPrice', 0), 
+                         'ask': r['PE'].get('askPrice', 0), 'lastPrice': r['PE'].get('lastPrice', 0), 
+                         'openInterest': r['PE'].get('openInterest', 0)})
+    return pd.DataFrame(rows)
+
+def fetch_ohlc_data(symbol: str, period="1y") -> pd.DataFrame:
+    yf_symbol = "^NSEI" if symbol.upper() == "NIFTY" else "^NSEBANK"
+    return yf.Ticker(yf_symbol).history(period=period)
+
+####################################################################################################
+# FILE 9
+# PATH: src/indian_options_god_mode/statistical_engine.py
+####################################################################################################
+
+import numpy as np
+import pandas as pd
+from scipy.stats import genpareto
+from arch import arch_model
+from .config import Config
+
+def calculate_realized_volatility(hist: pd.DataFrame) -> dict:
+    hist = hist.dropna()
+    if len(hist) < 2: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient history"}
+    log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+    rv_30d_cc = np.std(log_returns.tail(30)) * np.sqrt(252) * 100
+    return {"value": round(rv_30d_cc, 2), "status": "CALCULATED"}
+
+def calculate_garch_forecast(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna() * 100
+        res = arch_model(log_returns, vol='Garch', p=1, q=1, rescale=False).fit(disp='off')
+        variance_5d = res.forecast(horizon=5, reindex=False).variance.values[-1].mean()
+        
+        # FIX: Returns are in % (*100), so variance is in (%^2).
+        # Daily vol = sqrt(variance). Annualized vol = sqrt(variance) * sqrt(252)
+        forecast_vol = np.sqrt(variance_5d) * np.sqrt(252)
+        
+        return {"value": round(forecast_vol, 2), "status": "CALCULATED", "method": "GARCH_5D_MEAN_VAR_ANNUALIZED"}
+    except Exception: 
+        return {"value": None, "status": "SYSTEM_ERROR", "reason": "GARCH fit failed"}
+
+def calculate_evt_tail_risk(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+        losses = -log_returns[log_returns < 0]
+        threshold = np.quantile(losses, Config.EVT_THRESHOLD_PERCENTILE)
+        exceedances = losses[losses > threshold] - threshold
+        n_total, n_exc = len(log_returns), len(exceedances)
+        if n_exc < 10: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient exceedances"}
+        shape, loc, scale = genpareto.fit(exceedances, floc=0)
+        p_var = 0.01
+        if abs(shape) < 1e-6:
+            var_99 = threshold + scale * np.log(n_exc / (n_total * p_var))
+            es_99 = var_99 + scale
+        else:
+            var_99 = threshold + (scale / shape) * (((n_exc / (n_total * p_var))**shape) - 1)
+            es_99 = var_99 + (scale + shape * (var_99 - threshold)) / (1 - shape)
+        return {
+            "method": "POT", "threshold_pct": Config.EVT_THRESHOLD_PERCENTILE * 100,
+            "exceedances": n_exc, "shape_xi": round(shape, 4), "scale_beta": round(scale, 4),
+            "var_99_daily_pct": round(var_99 * 100, 2), "es_99_daily_pct": round(es_99 * 100, 2),
+            "status": "CALCULATED"
+        }
+    except Exception: 
+        return {"value": None, "status": "SYSTEM_ERROR", "reason": "EVT failed"}
+
+####################################################################################################
+# FILE 10
+# PATH: src/indian_options_god_mode/mcp_server.py
+####################################################################################################
+
+import numpy as np
+import pandas as pd
+import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from scipy.optimize import brentq
+from mcp.server.fastmcp import FastMCP
+
+from .quant_engine import (bs_delta, bs_gamma, bs_vanna, bs_charm, 
+                           calculate_implied_vol, get_exact_time_to_expiry, calculate_gex_at_spot)
+from .data_fetcher import get_expirations, get_spot, fetch_option_chain_df, fetch_ohlc_data
+from .statistical_engine import calculate_realized_volatility, calculate_garch_forecast, calculate_evt_tail_risk
+from .config import Config
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
+mcp = FastMCP("IndianOptionsGodModeV5_1_RC")
+
+@mcp.tool()
+def generate_quant_market_map(ticker: str, expiry: str) -> dict:
+    """
+    MASTER ORCHESTRATOR: Institutional-grade Quant Market Map.
+    """
+    try:
+        # 1. Expiry Validation
+        valid_expiries = get_expirations(ticker)
+        if not valid_expiries:
+            return {"status": "DATA_UNAVAILABLE", "error": "NSE expiry list empty or unreachable."}
+        if expiry not in valid_expiries:
+            return {"status": "INVALID_EXPIRY", "error": f"{expiry} not in NSE list: {valid_expiries[:3]}..."}
+            
+        # 2. Spot & Chain Fetch
+        spot = get_spot(ticker)
+        if spot is None: return {"status": "DATA_UNAVAILABLE", "error": "NSE spot unavailable."}
+            
+        df_raw = fetch_option_chain_df(ticker, expiry)
+        if df_raw.empty: return {"status": "DATA_UNAVAILABLE", "error": "NSE option chain empty."}
+            
+        rows_received = len(df_raw)
+        timestamp = datetime.now(IST).isoformat()
+        
+        # 3. Data Quality Engine
+        df_raw['mid_price'] = (df_raw['bid'] + df_raw['ask']) / 2
+        df_raw['mid_price'] = df_raw['mid_price'].fillna(df_raw['lastPrice'])
+        df_raw['spread_pct'] = (df_raw['ask'] - df_raw['bid']) / df_raw['mid_price'].replace(0, np.nan)
+        
+        rejection_reasons = {"zero_oi": 0, "zero_bid": 0, "invalid_price": 0, "wide_spread": 0, "invalid_iv": 0}
+        
+        df = df_raw.copy()
+        rejection_reasons["zero_oi"] = len(df[df['openInterest'] <= Config.MIN_OI])
+        df = df[df['openInterest'] > Config.MIN_OI]
+        
+        rejection_reasons["zero_bid"] = len(df[df['bid'] < Config.MIN_BID])
+        df = df[df['bid'] >= Config.MIN_BID]
+        
+        rejection_reasons["invalid_price"] = len(df[df['mid_price'] <= 0])
+        df = df[df['mid_price'] > 0]
+        
+        rejection_reasons["wide_spread"] = len(df[df['spread_pct'] > Config.MAX_SPREAD_PCT])
+        df = df[df['spread_pct'] <= Config.MAX_SPREAD_PCT]
+        
+        rows_used = len(df)
+        if rows_used < 10: return {"status": "DATA_QUALITY_FAILURE", "error": "Insufficient liquid contracts."}
+            
+        # 4. Time & Models
+        try:
+            T = get_exact_time_to_expiry(expiry)
+        except ValueError as e:
+            return {"status": "INVALID_EXPIRY", "error": str(e)}
+            
+        r, q = Config.RISK_FREE_RATE, Config.DIVIDEND_YIELD
+        
+        hist_df = fetch_ohlc_data(ticker, "1y")
+        rv_stats = calculate_realized_volatility(hist_df)
+        garch_stats = calculate_garch_forecast(hist_df)
+        evt_stats = calculate_evt_tail_risk(hist_df)
+        
+        # 5. Options Processing
+        total_call_gex, total_put_gex = 0, 0
+        total_vanna, total_charm = 0, 0
+        valid_options_list = []
+        
+        atm_call_iv, atm_put_iv = None, None
+        iv_25d_call, iv_25d_put = None, None
+        delta_dist_25c, delta_dist_25p = 1.0, 1.0
+        min_diff_atm = float('inf')
+        
+        for _, row in df.iterrows():
+            K, oi, opt_type = row['strike'], row['openInterest'], row['option_type']
+            iv = calculate_implied_vol(row['mid_price'], spot, K, T, r, opt_type, q)
+            if np.isnan(iv): 
+                rejection_reasons["invalid_iv"] += 1
+                continue
+                
+            gamma = bs_gamma(spot, K, T, r, iv, q)
+            sign = -1 if opt_type == 'call' else 1
+            gex = sign * gamma * oi * Config.LOT_SIZE * (spot**2) * 0.01
+            
+            if opt_type == 'call': total_call_gex += gex
+            else: total_put_gex += gex
+            
+            total_vanna += bs_vanna(spot, K, T, r, iv, q) * oi * Config.LOT_SIZE * sign
+            total_charm += bs_charm(spot, K, T, r, iv, opt_type, q) * oi * Config.LOT_SIZE * sign
+            
+            valid_options_list.append({'K': K, 'oi': oi, 'iv': iv, 'type': opt_type, 'sign': sign})
+            
+            # IV Surface (Strict Nulls)
+            if opt_type == 'call':
+                diff = abs(spot - K)
+                if diff < min_diff_atm: atm_call_iv = iv * 100; min_diff_atm = diff
+                diff_d = abs(bs_delta(spot, K, T, r, iv, 'call', q) - 0.25)
+                if diff_d < delta_dist_25c: 
+                    iv_25d_call = iv * 100; delta_dist_25c = diff_d
+            else:
+                diff = abs(spot - K)
+                if diff < min_diff_atm: atm_put_iv = iv * 100; min_diff_atm = diff
+                diff_d = abs(bs_delta(spot, K, T, r, iv, 'put', q) + 0.25)
+                if diff_d < delta_dist_25p: 
+                    iv_25d_put = iv * 100; delta_dist_25p = diff_d
+
+        # Fallback if exact 25D not found within reasonable delta distance
+        if delta_dist_25c > Config.MAX_DELTA_DISTANCE: iv_25d_call = None
+        if delta_dist_25p > Config.MAX_DELTA_DISTANCE: iv_25d_put = None
+        
+        atm_iv_mid = (atm_call_iv + atm_put_iv) / 2 if (atm_call_iv and atm_put_iv) else None
+        risk_reversal = (iv_25d_call - iv_25d_put) if (iv_25d_call and iv_25d_put) else None
+        
+        # 6. Model Gamma Flip
+        gamma_flip = None
+        try:
+            lower_bound, upper_bound = spot * 0.90, spot * 1.10
+            gex_low = calculate_gex_at_spot(lower_bound, valid_options_list, T, r, q, Config.LOT_SIZE)
+            gex_high = calculate_gex_at_spot(upper_bound, valid_options_list, T, r, q, Config.LOT_SIZE)
+            if gex_low * gex_high < 0:
+                gamma_flip = brentq(calculate_gex_at_spot, lower_bound, upper_bound, 
+                                    args=(valid_options_list, T, r, q, Config.LOT_SIZE))
+        except Exception:
+            logger.warning("Gamma flip calculation failed", exc_info=True)
+            
+        # 7. Map Construction
+        rv_30d = rv_stats.get("value")
+        garch_5d = garch_stats.get("value")
+        iv_rv_spread = round(atm_iv_mid - rv_30d, 2) if (atm_iv_mid and rv_30d) else None
+        
+        quant_map = {
+            "STATUS": "LIVE_CALCULATED",
+            "MODEL_VERSION": "5.1.0-rc1",
+            "MODEL_INPUTS": {
+                "risk_free_rate": r, "risk_free_rate_source": "CONFIG_STATIC",
+                "lot_size": Config.LOT_SIZE, "lot_size_source": "CONFIG_STATIC",
+                "time_convention": "ACT/365.25 calendar seconds", "timezone": "Asia/Kolkata"
+            },
+            "PROVENANCE": {
+                "source": "NSE_DIRECT", "timestamp": timestamp,
+                "rows_received": rows_received, "rows_used": rows_used,
+                "rejection_reasons": rejection_reasons
+            },
+            "DATA_CLASSIFICATION": {
+                "Spot": "OBSERVED", "OI": "OBSERVED", "IV": "DERIVED",
+                "GEX": "INFERRED", "Dealer_Position": "ASSUMED", "Gamma_Flip": "MODEL_DERIVED"
+            },
+            "VOLATILITY_STATE": {
+                "ATM_Call_IV": atm_call_iv, "ATM_Put_IV": atm_put_iv, "ATM_IV_Mid": atm_iv_mid,
+                "IV_25D_Call": iv_25d_call, "IV_25D_Put": iv_25d_put, "Risk_Reversal_25D": risk_reversal,
+                "RV_30D": rv_30d, "GARCH_5D_Annualized": garch_5d, "IV_RV_Spread": iv_rv_spread,
+                "IV_SURFACE_STATUS": "COMPLETE" if all(v is not None for v in [atm_iv_mid, iv_25d_call, iv_25d_put]) else "INCOMPLETE"
+            },
+            "POSITIONING_INFERENCE": {
+                "Model_GEX_Proxy": round(total_call_gex + total_put_gex, 2),
+                "Call_GEX": round(total_call_gex, 2), "Put_GEX": round(total_put_gex, 2),
+                "Total_Vanna": round(total_vanna, 2), "Total_Charm_Daily": round(total_charm, 4),
+                "Gamma_Regime": "Short Gamma (Trend)" if (total_call_gex + total_put_gex) < 0 else "Long Gamma (Mean Revert)",
+                "Model_Gamma_Flip_Level": round(gamma_flip, 2) if gamma_flip else None,
+                "gamma_flip_method": "BS_gamma_static_IV_spot_scan",
+                "positioning_assumption": {
+                    "call_sign": -1, "put_sign": +1,
+                    "interpretation": "Hypothetical dealer short-call / long-put inventory",
+                    "observed_dealer_positioning": False
+                }
+            },
+            "TAIL_RISK": evt_stats
+        }
+        return quant_map
+        
+    except Exception as e:
+        logger.error("System error in Quant Map generation", exc_info=True)
+        return {"status": "SYSTEM_ERROR", "error": str(e)}
+
+def main():
+    mcp.run()
+
+if __name__ == "__main__":
+    main()
+
+####################################################################################################
+# FILE 11
+# PATH: tests/__init__.py
+####################################################################################################
+
+# Empty init file
+
+####################################################################################################
+# FILE 12
+# PATH: tests/test_greeks.py
+####################################################################################################
+
+import pytest
+import numpy as np
+from scipy.stats import norm
+from indian_options_god_mode.quant_engine import bs_delta, bs_gamma, bs_vanna, bs_charm, calculate_implied_vol
+
+S, K, T, r, sigma, q = 24000, 24000, 7/365, 0.07, 0.12, 0.0
+
+def test_delta_bounds():
+    assert 0 <= bs_delta(S, K, T, r, sigma, 'call', q) <= 1
+    assert -1 <= bs_delta(S, K, T, r, sigma, 'put', q) <= 0
+
+def test_put_call_parity():
+    assert abs((bs_delta(S, K, T, r, sigma, 'call', q) - bs_delta(S, K, T, r, sigma, 'put', q)) - 1.0) < 0.01
+
+def test_gamma_positive():
+    assert bs_gamma(S, K, T, r, sigma, q) > 0
+
+def test_numerical_delta():
+    """Verify Delta via finite difference."""
+    eps = 0.01
+    d1 = (np.log((S+eps) / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    p_up = (S+eps) * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    d1 = (np.log((S-eps) / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    p_dn = (S-eps) * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    num_delta = (p_up - p_dn) / (2 * eps)
+    assert abs(bs_delta(S, K, T, r, sigma, 'call', q) - num_delta) < 0.001
+
+def test_numerical_gamma():
+    """Verify Gamma via finite difference."""
+    eps = 1.0
+    d1 = (np.log((S+eps) / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    p_up = (S+eps) * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    d1 = (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    p_mid = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    d1 = (np.log((S-eps) / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    p_dn = (S-eps) * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    num_gamma = (p_up - 2*p_mid + p_dn) / (eps**2)
+    assert abs(bs_gamma(S, K, T, r, sigma, q) - num_gamma) < 0.001
+
+def test_iv_inversion_and_bounds():
+    """Calculating IV from a BS price should return the original sigma."""
+    d1 = (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    call_price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    
+    calculated_iv = calculate_implied_vol(call_price, S, K, T, r, 'call', q)
+    assert abs(calculated_iv - sigma) < 0.0001
+    
+    # Test arbitrage bound rejection
+    assert np.isnan(calculate_implied_vol(0.01, S, K, T, r, 'call', q))
+
+####################################################################################################
+# FILE 13
+# PATH: tests/test_statistical_engine.py
+####################################################################################################
+
+import pytest
+import numpy as np
+import pandas as pd
+from indian_options_god_mode.statistical_engine import calculate_garch_forecast, calculate_evt_tail_risk
+
+def test_garch_annualization():
+    """Verify GARCH output is roughly in expected annualized vol range."""
+    np.random.seed(42)
+    # Simulate 100 days of 1% daily vol
+    rets = np.random.normal(0, 0.01, 100)
+    idx = pd.date_range('2023-01-01', periods=100)
+    hist = pd.DataFrame({'Close': np.cumprod(1+rets)*100}, index=idx)
+    
+    res = calculate_garch_forecast(hist)
+    assert res['status'] == 'CALCULATED'
+    # 1% daily * sqrt(252) ~ 15.8%
+    assert 10.0 < res['value'] < 25.0
+
+def test_evt_pot_calculation():
+    """Verify EVT runs and returns shape parameter."""
+    np.random.seed(42)
+    # Student-t dist has fat tails
+    rets = np.random.standard_t(3, 500) / 100
+    idx = pd.date_range('2023-01-01', periods=500)
+    hist = pd.DataFrame({'Close': np.cumprod(1+rets)*100}, index=idx)
+    
+    res = calculate_evt_tail_risk(hist)
+    assert res['status'] == 'CALCULATED'
+    assert res['shape_xi'] > 0  # Fat tails
+
+####################################################################################################
+# FILE 14
+# PATH: .github/workflows/tests.yml
+####################################################################################################
+
+name: Tests
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        
+    - name: Run tests
+      run: |
+        pytest tests/
