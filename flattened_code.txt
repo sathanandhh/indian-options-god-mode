@@ -1,23 +1,154 @@
+====================================================================================================
+FLATTENED PROJECT SOURCE CODE
+====================================================================================================
+
+Project: New folder
+Source: E:\Projects\New folder (2)\New folder
+Files included: 25
+
+====================================================================================================
+
+
 ####################################################################################################
 # FILE 1
-# PATH: .gitignore
+# PATH: .github\workflows\tests.yml
 ####################################################################################################
 
-.env
-.venv/
-venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.idea/
-.vscode/
-logs/
-data/
-*.csv
-*.parquet
+name: Tests
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        
+    - name: Run tests
+      run: |
+        pytest tests/
+
 
 ####################################################################################################
 # FILE 2
+# PATH: Codeflattener.py
+####################################################################################################
+
+from pathlib import Path
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+SOURCE_DIR = Path(__file__).resolve().parent
+OUTPUT_FILE = SOURCE_DIR / "flattened_code.txt"
+
+EXCLUDED_DIRS = {
+    ".git", ".svn", ".hg", "__pycache__", ".venv", "venv", "env",
+    "node_modules", ".idea", ".vscode", "dist", "build", "target",
+    ".pytest_cache", ".mypy_cache",
+}
+
+CODE_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp", ".h", ".hpp",
+    ".cs", ".go", ".rs", ".php", ".rb", ".swift", ".kt", ".kts", ".sql",
+    ".html", ".htm", ".css", ".scss", ".sass", ".less", ".xml", ".json",
+    ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".md", ".txt",
+    ".sh", ".bat", ".ps1", ".dockerfile",
+}
+
+SPECIAL_FILES = {
+    "dockerfile", "makefile", "requirements.txt", "pyproject.toml",
+    "package.json", "package-lock.json", "docker-compose.yml",
+    "docker-compose.yaml", ".env.example",
+}
+
+def should_include(file_path):
+    if file_path.resolve() == OUTPUT_FILE.resolve():
+        return False
+    if any(part in EXCLUDED_DIRS for part in file_path.parts):
+        return False
+    if file_path.name.lower() in {x.lower() for x in SPECIAL_FILES}:
+        return True
+    return file_path.suffix.lower() in CODE_EXTENSIONS
+
+def flatten_directory(source_dir, output_file):
+    source_dir = Path(source_dir).resolve()
+    output_file = Path(output_file).resolve()
+    files = []
+    for path in source_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if should_include(path):
+            files.append(path)
+    files.sort(key=lambda x: str(x.relative_to(source_dir)).lower())
+
+    with open(output_file, "w", encoding="utf-8", errors="ignore") as output:
+        output.write("=" * 100 + "\n")
+        output.write("FLATTENED PROJECT SOURCE CODE\n")
+        output.write("=" * 100 + "\n\n")
+        output.write(f"Project: {source_dir.name}\n")
+        output.write(f"Source: {source_dir}\n")
+        output.write(f"Files included: {len(files)}\n\n")
+        output.write("=" * 100 + "\n")
+
+        for index, file_path in enumerate(files, start=1):
+            relative_path = file_path.relative_to(source_dir)
+            output.write("\n\n")
+            output.write("#" * 100 + "\n")
+            output.write(f"# FILE {index}\n")
+            output.write(f"# PATH: {relative_path}\n")
+            output.write("#" * 100 + "\n\n")
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                output.write(content)
+                if not content.endswith("\n"):
+                    output.write("\n")
+            except Exception as e:
+                output.write(f"\n[ERROR READING FILE: {e}]\n")
+
+if __name__ == "__main__":
+    flatten_directory(SOURCE_DIR, OUTPUT_FILE)
+
+
+
+####################################################################################################
+# FILE 3
+# PATH: config.py
+####################################################################################################
+
+class Config:
+    RISK_FREE_RATE = float(os.getenv("RISK_FREE_RATE", 0.07))
+    DIVIDEND_YIELD = float(os.getenv("DIVIDEND_YIELD", 0.0))
+    LOT_SIZE = int(os.getenv("LOT_SIZE", 25))
+    MARKET_CLOSE_HOUR = 15
+    MARKET_CLOSE_MINUTE = 30
+    
+    EVT_THRESHOLD_PERCENTILE = 0.95
+    
+    # Data Quality
+    MIN_OI = 500
+    MIN_BID = 0.05
+    MAX_SPREAD_PCT = 0.50       # Reject options where bid-ask spread > 50% of mid
+
+
+####################################################################################################
+# FILE 4
 # PATH: pyproject.toml
 ####################################################################################################
 
@@ -46,40 +177,212 @@ dev = ["pytest>=7.0"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+
 ####################################################################################################
-# FILE 3
+# FILE 5
 # PATH: README.md
 ####################################################################################################
 
-## Indian Options God Mode MCP v5.1.0-rc1
+````markdown
+# Indian Options God Mode MCP v5.1.0-rc1
 
-A professional-grade Model Context Protocol (MCP) server for Indian Options (NSE) valuation. This system acts as a quantitative research assistant, providing volatility analysis, tail risk metrics, and dealer positioning proxies.
+Institutional-grade quantitative MCP server for **NSE Indian Options**, providing volatility analysis, Greeks, tail-risk metrics, IV surface analysis and model-based dealer positioning proxies.
 
-### Core Principles
-- **No Hallucinations:** If NSE data is unavailable, the system returns `null` with a `DATA_UNAVAILABLE` status. It never substitutes missing quantitative values with `0`.
-- **Provenance & Classification:** Every output tracks rows received, rejected, and explicitly classifies data as `OBSERVED`, `DERIVED`, `INFERRED`, or `ASSUMED`.
-- **Asumption Transparency:** Dealer GEX is labeled as `Model_GEX_Proxy` because actual dealer books are unavailable.
+## Core Principles
 
-### What this system does NOT know
-- Dealer inventory
-- Customer/dealer identity
-- Actual dealer delta/gamma
-- OTC or structured positions
+- **No hallucinated data** — unavailable NSE data returns `null` / `DATA_UNAVAILABLE`.
+- **Data provenance** — outputs distinguish `OBSERVED`, `DERIVED`, `INFERRED` and `ASSUMED` values.
+- **Model transparency** — GEX is explicitly a `Model_GEX_Proxy`; actual dealer books are not observable.
+- **Strict validation** — NSE expiry validation, liquidity filters and IV arbitrage-bound checks.
 
-Therefore, GEX is an inferred positioning proxy under a hypothetical inventory assumption, not observed dealer exposure.
+## Quantitative Pipeline
 
-### Setup
+```text
+                 ┌─────────────────────┐
+                 │    Claude Desktop   │
+                 │    MCP Client       │
+                 └──────────┬──────────┘
+                            │ MCP
+                            ▼
+              ┌──────────────────────────┐
+              │ Indian Options God Mode  │
+              │       MCP Server         │
+              └────────────┬─────────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+     NSE Option Chain   yfinance       Configuration
+     Spot / OI / IV     Historical      R / Lot Size
+          │             OHLC
+          └──────────────┬─────────────────┘
+                         ▼
+              ┌─────────────────────┐
+              │   Data Quality       │
+              │   & Validation       │
+              └──────────┬──────────┘
+                         ▼
+        ┌────────────────────────────────┐
+        │       Quant Engine              │
+        │ BS Greeks • IV • GEX • Gamma    │
+        │ Flip • Vanna • Charm             │
+        └───────────────┬────────────────┘
+                        ▼
+        ┌────────────────────────────────┐
+        │ Statistical Engine              │
+        │ RV • GARCH • EVT / POT          │
+        └───────────────┬────────────────┘
+                        ▼
+              ┌─────────────────────┐
+              │  Quant Market Map   │
+              │ Volatility          │
+              │ Positioning         │
+              │ Tail Risk           │
+              │ Provenance          │
+              └─────────────────────┘
+````
+
+## Current Analysis
+
+**Volatility**
+
+* ATM Call / Put IV
+* 25D Call / Put IV
+* 25D Risk Reversal
+* IV–RV spread
+* 30D realized volatility
+* 5D GARCH annualized forecast
+
+**Positioning**
+
+* Model GEX Proxy
+* Call / Put GEX
+* Gamma regime
+* Model Gamma Flip
+* Vanna
+* Charm
+
+**Tail Risk**
+
+* EVT / Peaks-over-Threshold
+* 99% VaR
+* Expected Shortfall
+* Tail-shape parameter
+
+## Data Classification
+
+| Classification | Meaning                                |
+| -------------- | -------------------------------------- |
+| `OBSERVED`     | Directly obtained from NSE/data source |
+| `DERIVED`      | Calculated from observed market data   |
+| `INFERRED`     | Model-based interpretation             |
+| `ASSUMED`      | Explicit modelling assumption          |
+
+> **Important:** GEX does not represent actual dealer positioning. The system assumes a hypothetical dealer inventory structure and labels the resulting exposure as `Model_GEX_Proxy`.
+
+## Installation
+
 ```bash
+git clone <your-repository>
+cd indian-options-god-mode
+
+python -m venv .venv
+.venv\Scripts\activate       # Windows
+
 pip install -e .
 pytest tests/
+```
+
+Run the MCP server:
+
+```bash
 python -m indian_options_god_mode.mcp_server
 ```
 
+## Claude Desktop Integration
+
+Add the server to Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "indian-options-god-mode": {
+      "command": "C:\\path\\to\\project\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "indian_options_god_mode.mcp_server"
+      ],
+      "cwd": "C:\\path\\to\\project"
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving the configuration.
+
+You can then ask Claude:
+
+```text
+Generate the Quant Market Map for NIFTY for the next valid NSE expiry.
+```
+
+or:
+
+```text
+Analyze NIFTY options for the specified expiry and explain
+the volatility, gamma regime, IV-RV spread and tail risk.
+```
+
+## Project Structure
+
+```text
+indian-options-god-mode/
+├── src/
+│   └── indian_options_god_mode/
+│       ├── config.py
+│       ├── quant_engine.py
+│       ├── data_fetcher.py
+│       ├── statistical_engine.py
+│       └── mcp_server.py
+├── tests/
+├── .github/workflows/tests.yml
+├── pyproject.toml
+├── requirements.txt
+└── README.md
+```
+
+**Version:** `5.1.0-rc1`
+**Status:** Release Candidate
+
+```
+```
+
+
 ####################################################################################################
-# FILE 4
+# FILE 6
+# PATH: render.yaml
+####################################################################################################
+
+# render.yaml
+services:
+  - type: web
+    name: indian-options-god-mode
+    env: python
+    region: singapore # Choose the region closest to you
+    plan: free # This makes it 100% free!
+    buildCommand: pip install -e .
+    startCommand: uvicorn src.indian_options_god_mode.web_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+
+
+####################################################################################################
+# FILE 7
 # PATH: requirements.txt
 ####################################################################################################
 
+# requirements.txt
 mcp>=0.1
 nsepython>=1.0
 yfinance>=0.2
@@ -88,123 +391,165 @@ numpy>=1.24
 pandas>=2.0
 arch>=6.0
 pytest>=7.0
+fastapi>=0.104
+uvicorn>=0.24
 
-####################################################################################################
-# FILE 5
-# PATH: src/indian_options_god_mode/__init__.py
-####################################################################################################
-
-# Indian Options God Mode Package
-
-####################################################################################################
-# FILE 6
-# PATH: src/indian_options_god_mode/config.py
-####################################################################################################
-
-class Config:
-    RISK_FREE_RATE = 0.07       # Static config
-    DIVIDEND_YIELD = 0.0
-    LOT_SIZE = 25               # Static config
-    MARKET_CLOSE_HOUR = 15
-    MARKET_CLOSE_MINUTE = 30
-    
-    EVT_THRESHOLD_PERCENTILE = 0.95
-    
-    # Data Quality
-    MIN_OI = 500
-    MIN_BID = 0.05
-    MAX_SPREAD_PCT = 0.50       # Reject options where bid-ask spread > 50% of mid
-    MAX_DELTA_DISTANCE = 0.05   # Max distance from target delta for IV surface
-
-####################################################################################################
-# FILE 7
-# PATH: src/indian_options_god_mode/quant_engine.py
-####################################################################################################
-
-import numpy as np
-from datetime import datetime, time, date
-from zoneinfo import ZoneInfo
-from scipy.stats import norm
-from scipy.optimize import brentq
-from .config import Config
-
-IST = ZoneInfo("Asia/Kolkata")
-
-def get_exact_time_to_expiry(expiry_date_str: str) -> float:
-    """Calculates exact time to expiry in years. Raises ValueError on malformed date."""
-    try:
-        try: exp_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
-        except ValueError: exp_date = datetime.strptime(expiry_date_str, '%d-%b-%Y').date()
-    except ValueError as e:
-        raise ValueError(f"INVALID_EXPIRY_FORMAT: {expiry_date_str}") from e
-        
-    expiry_dt = datetime.combine(exp_date, time(Config.MARKET_CLOSE_HOUR, Config.MARKET_CLOSE_MINUTE), tzinfo=IST)
-    now = datetime.now(IST)
-    
-    if expiry_dt <= now: return 0.0
-        
-    seconds_remaining = (expiry_dt - now).total_seconds()
-    seconds_in_year = 365.25 * 24 * 3600  # ACT/365.25 convention
-    return seconds_remaining / seconds_in_year
-
-def d1(S, K, T, r, sigma, q=0.0):
-    if T <= 0 or sigma <= 0: return 0
-    return (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
-
-def bs_delta(S, K, T, r, sigma, option_type='call', q=0.0):
-    if T <= 0 or sigma <= 0: return 0.0
-    d1_val = d1(S, K, T, r, sigma, q)
-    return np.exp(-q * T) * (norm.cdf(d1_val) if option_type == 'call' else -norm.cdf(-d1_val))
-
-def bs_gamma(S, K, T, r, sigma, q=0.0):
-    if T <= 0 or sigma <= 0: return 0
-    return np.exp(-q * T) * norm.pdf(d1(S, K, T, r, sigma, q)) / (S * sigma * np.sqrt(T))
-
-def bs_vanna(S, K, T, r, sigma, q=0.0):
-    if T <= 0 or sigma <= 0: return 0
-    d2_val = d1(S, K, T, r, sigma, q) - sigma * np.sqrt(T)
-    return -np.exp(-q * T) * norm.pdf(d2_val) / sigma
-
-def bs_charm(S, K, T, r, sigma, option_type='call', q=0.0):
-    if T <= 0 or sigma <= 0: return 0
-    d1_val = d1(S, K, T, r, sigma, q)
-    d2_val = d1_val - sigma * np.sqrt(T)
-    charm = -np.exp(-q * T) * norm.pdf(d1_val) * (2*(r-q)*T - d2_val * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
-    return (charm if option_type == 'call' else -charm) / 365
-
-def calculate_implied_vol(market_price, S, K, T, r, option_type='call', q=0.0):
-    """Brentq solver with strict no-arbitrage bounds."""
-    if market_price <= 0 or T <= 0: return np.nan
-    
-    # No-arbitrage bounds check
-    intrinsic = max(0, S * np.exp(-q*T) - K * np.exp(-r*T)) if option_type == 'call' else max(0, K * np.exp(-r*T) - S * np.exp(-q*T))
-    if market_price < intrinsic:
-        return np.nan  # Price violates BS no-arbitrage bounds
-        
-    def objective(sigma): 
-        d1_val = d1(S, K, T, r, sigma, q)
-        d2_val = d1_val - sigma * np.sqrt(T)
-        if option_type == 'call':
-            p = S * np.exp(-q * T) * norm.cdf(d1_val) - K * np.exp(-r * T) * norm.cdf(d2_val)
-        else:
-            p = K * np.exp(-r * T) * norm.cdf(-d2_val) - S * np.exp(-q * T) * norm.cdf(-d1_val)
-        return p - market_price
-        
-    try: return brentq(objective, 0.001, 5.0)
-    except ValueError: return np.nan
-
-def calculate_gex_at_spot(S_hyp, options_list, T, r, q, lot_size):
-    """Helper for Gamma Flip root finding."""
-    total_gex = 0
-    for opt in options_list:
-        gamma = bs_gamma(S_hyp, opt['K'], T, r, opt['iv'], q)
-        gex = opt['sign'] * gamma * opt['oi'] * lot_size * (S_hyp**2) * 0.01
-        total_gex += gex
-    return total_gex
 
 ####################################################################################################
 # FILE 8
-# PATH: src/indian_options_god_mode/data_fetcher.py
+# PATH: restore_flattened.py
+####################################################################################################
+
+from pathlib import Path, PurePosixPath
+import re
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+SOURCE_DIR = Path(__file__).resolve().parent
+FLATTENED_FILE = SOURCE_DIR / "flattened_code.txt"
+
+# Matches ONLY the header block itself:
+#   ####...####
+#   # FILE <n>
+#   # PATH: <path>
+#   ####...####
+#
+# IMPORTANT: this does NOT try to also detect where the block ends via a
+# lookahead. Each header is located independently with finditer(), and a
+# file's content is simply "everything between this header and the start
+# of the next one". This is what actually fixes the bug: the old version
+# used a single regex with a lookahead for "the next header", and if the
+# blank-line spacing between any two blocks didn't match exactly what the
+# lookahead expected, that boundary was silently missed — which merges
+# many files into one giant "file" and makes most of your files vanish.
+# Finding headers independently can't fail that way.
+HEADER_PATTERN = re.compile(
+    r"#{5,}[ \t]*\n"
+    r"#[ \t]*FILE\s+\d+[ \t]*\n"
+    r"#[ \t]*PATH:[ \t]*(?P<path>.+?)[ \t]*\n"
+    r"#{5,}[ \t]*\n"
+)
+
+
+def normalize_relative_path(raw_path: str) -> Path:
+    """
+    Convert whatever text was captured after 'PATH:' into a safe,
+    OS-correct relative Path.
+      - Windows backslashes -> forward slashes (the earlier bug where
+        subfolders weren't created on Linux/Mac).
+      - Strip leading slashes / stray quotes / whitespace.
+    """
+    p = raw_path.strip().strip('"').strip("'")
+    p = p.replace("\\", "/")
+    p = p.lstrip("/")
+    parts = [part for part in PurePosixPath(p).parts if part not in ("", ".")]
+    return Path(*parts) if parts else Path()
+
+
+def restore_directory(flattened_file, source_dir, verbose=True):
+    flattened_file = Path(flattened_file).resolve()
+    source_dir = Path(source_dir).resolve()
+
+    if not flattened_file.exists():
+        print("ERROR: Flattened file not found:")
+        print(flattened_file)
+        return
+
+    content = flattened_file.read_text(encoding="utf-8", errors="ignore")
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+    headers = list(HEADER_PATTERN.finditer(content))
+
+    if not headers:
+        print("ERROR: No file headers were found.")
+        print("Expected header format:")
+        print("  ####################")
+        print("  # FILE 1")
+        print("  # PATH: some/relative/path.py")
+        print("  ####################")
+        return
+
+    print("=" * 70)
+    print("RESTORING PROJECT")
+    print("=" * 70)
+    print(f"Source directory : {source_dir}")
+    print(f"Flattened file   : {flattened_file}")
+    print(f"Files detected   : {len(headers)}")
+    print("=" * 70)
+
+    restored = 0
+    failed = 0
+
+    for i, match in enumerate(headers):
+        raw_path = match.group("path")
+        content_start = match.end()
+        content_end = headers[i + 1].start() if i + 1 < len(headers) else len(content)
+        file_content = content[content_start:content_end]
+
+        # Strip exactly the blank-line padding introduced by the header
+        # block spacing (one leading newline, trailing blank lines before
+        # the next header), without mangling intentional content.
+        if file_content.startswith("\n"):
+            file_content = file_content[1:]
+        file_content = file_content.rstrip("\n")
+        if file_content:
+            file_content += "\n"
+
+        relative_path = normalize_relative_path(raw_path)
+
+        if verbose:
+            print(f"  raw PATH captured: {raw_path!r} -> {relative_path.as_posix()!r}")
+
+        if not relative_path.parts:
+            print(f"SKIPPED empty path (raw: {raw_path!r})")
+            failed += 1
+            continue
+
+        target_file = source_dir / relative_path
+
+        try:
+            resolved = target_file.resolve()
+            try:
+                resolved.relative_to(source_dir)
+            except ValueError:
+                print(f"SKIPPED unsafe path: {raw_path!r} -> {resolved}")
+                failed += 1
+                continue
+
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_text(file_content, encoding="utf-8")
+
+            print(f"[OK] {relative_path.as_posix()}")
+            restored += 1
+        except Exception as e:
+            print(f"[ERROR] {raw_path!r} -> {e}")
+            failed += 1
+
+    print()
+    print("=" * 70)
+    print("RESTORE COMPLETED")
+    print("=" * 70)
+    print(f"Successfully restored : {restored}")
+    print(f"Failed                : {failed}")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    restore_directory(FLATTENED_FILE, SOURCE_DIR)
+
+
+####################################################################################################
+# FILE 9
+# PATH: src\__init__.py
+####################################################################################################
+
+# Empty init file
+
+
+####################################################################################################
+# FILE 10
+# PATH: src\data_fetcher.py
 ####################################################################################################
 
 import pandas as pd
@@ -246,67 +591,87 @@ def fetch_ohlc_data(symbol: str, period="1y") -> pd.DataFrame:
     yf_symbol = "^NSEI" if symbol.upper() == "NIFTY" else "^NSEBANK"
     return yf.Ticker(yf_symbol).history(period=period)
 
+
 ####################################################################################################
-# FILE 9
-# PATH: src/indian_options_god_mode/statistical_engine.py
+# FILE 11
+# PATH: src\indian_options_god_mode\__init__.py
 ####################################################################################################
 
-import numpy as np
+# Indian Options God Mode Package
+
+
+####################################################################################################
+# FILE 12
+# PATH: src\indian_options_god_mode\config.py
+####################################################################################################
+
+class Config:
+    RISK_FREE_RATE = 0.07       # Static config
+    DIVIDEND_YIELD = 0.0
+    LOT_SIZE = 25               # Static config
+    MARKET_CLOSE_HOUR = 15
+    MARKET_CLOSE_MINUTE = 30
+    
+    EVT_THRESHOLD_PERCENTILE = 0.95
+    
+    # Data Quality
+    MIN_OI = 500
+    MIN_BID = 0.05
+    MAX_SPREAD_PCT = 0.50       # Reject options where bid-ask spread > 50% of mid
+    MAX_DELTA_DISTANCE = 0.05   # Max distance from target delta for IV surface
+
+
+####################################################################################################
+# FILE 13
+# PATH: src\indian_options_god_mode\data_fetcher.py
+####################################################################################################
+
 import pandas as pd
-from scipy.stats import genpareto
-from arch import arch_model
-from .config import Config
+import yfinance as yf
+from nsepython import nse_optionchain_scraper
 
-def calculate_realized_volatility(hist: pd.DataFrame) -> dict:
-    hist = hist.dropna()
-    if len(hist) < 2: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient history"}
-    log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
-    rv_30d_cc = np.std(log_returns.tail(30)) * np.sqrt(252) * 100
-    return {"value": round(rv_30d_cc, 2), "status": "CALCULATED"}
+def _format_ticker(symbol: str) -> str:
+    s = symbol.replace("^", "").replace(".NS", "")
+    if s == "NSEI": return "NIFTY"
+    if s == "NSEBANK": return "BANKNIFTY"
+    return s
 
-def calculate_garch_forecast(hist: pd.DataFrame) -> dict:
-    try:
-        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna() * 100
-        res = arch_model(log_returns, vol='Garch', p=1, q=1, rescale=False).fit(disp='off')
-        variance_5d = res.forecast(horizon=5, reindex=False).variance.values[-1].mean()
-        
-        # FIX: Returns are in % (*100), so variance is in (%^2).
-        # Daily vol = sqrt(variance). Annualized vol = sqrt(variance) * sqrt(252)
-        forecast_vol = np.sqrt(variance_5d) * np.sqrt(252)
-        
-        return {"value": round(forecast_vol, 2), "status": "CALCULATED", "method": "GARCH_5D_MEAN_VAR_ANNUALIZED"}
-    except Exception: 
-        return {"value": None, "status": "SYSTEM_ERROR", "reason": "GARCH fit failed"}
+def get_expirations(symbol: str) -> list[str]:
+    try: return nse_optionchain_scraper(_format_ticker(symbol))['records']['expiryDates']
+    except Exception: return []
 
-def calculate_evt_tail_risk(hist: pd.DataFrame) -> dict:
-    try:
-        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
-        losses = -log_returns[log_returns < 0]
-        threshold = np.quantile(losses, Config.EVT_THRESHOLD_PERCENTILE)
-        exceedances = losses[losses > threshold] - threshold
-        n_total, n_exc = len(log_returns), len(exceedances)
-        if n_exc < 10: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient exceedances"}
-        shape, loc, scale = genpareto.fit(exceedances, floc=0)
-        p_var = 0.01
-        if abs(shape) < 1e-6:
-            var_99 = threshold + scale * np.log(n_exc / (n_total * p_var))
-            es_99 = var_99 + scale
-        else:
-            var_99 = threshold + (scale / shape) * (((n_exc / (n_total * p_var))**shape) - 1)
-            es_99 = var_99 + (scale + shape * (var_99 - threshold)) / (1 - shape)
-        return {
-            "method": "POT", "threshold_pct": Config.EVT_THRESHOLD_PERCENTILE * 100,
-            "exceedances": n_exc, "shape_xi": round(shape, 4), "scale_beta": round(scale, 4),
-            "var_99_daily_pct": round(var_99 * 100, 2), "es_99_daily_pct": round(es_99 * 100, 2),
-            "status": "CALCULATED"
-        }
-    except Exception: 
-        return {"value": None, "status": "SYSTEM_ERROR", "reason": "EVT failed"}
+def get_spot(symbol: str) -> float | None:
+    try: return float(nse_optionchain_scraper(_format_ticker(symbol))['records']['underlyingValue'])
+    except Exception: return None
+
+def fetch_option_chain_df(symbol: str, expiry: str) -> pd.DataFrame:
+    payload = nse_optionchain_scraper(_format_ticker(symbol))
+    records = payload['records']['data']
+    filtered = [r for r in records if r['expiryDate'] == expiry]
+    
+    rows = []
+    for r in filtered:
+        if 'CE' in r:
+            rows.append({'strike': r['strike'], 'option_type': 'call', 'bid': r['CE'].get('bidPrice', 0), 
+                         'ask': r['CE'].get('askPrice', 0), 'lastPrice': r['CE'].get('lastPrice', 0), 
+                         'openInterest': r['CE'].get('openInterest', 0)})
+        if 'PE' in r:
+            rows.append({'strike': r['strike'], 'option_type': 'put', 'bid': r['PE'].get('bidPrice', 0), 
+                         'ask': r['PE'].get('askPrice', 0), 'lastPrice': r['PE'].get('lastPrice', 0), 
+                         'openInterest': r['PE'].get('openInterest', 0)})
+    return pd.DataFrame(rows)
+
+def fetch_ohlc_data(symbol: str, period="1y") -> pd.DataFrame:
+    yf_symbol = "^NSEI" if symbol.upper() == "NIFTY" else "^NSEBANK"
+    return yf.Ticker(yf_symbol).history(period=period)
+
 
 ####################################################################################################
-# FILE 10
-# PATH: src/indian_options_god_mode/mcp_server.py
+# FILE 14
+# PATH: src\indian_options_god_mode\mcp_server.py
 ####################################################################################################
+
+##
 
 import numpy as np
 import pandas as pd
@@ -320,13 +685,27 @@ from .quant_engine import (bs_delta, bs_gamma, bs_vanna, bs_charm,
                            calculate_implied_vol, get_exact_time_to_expiry, calculate_gex_at_spot)
 from .data_fetcher import get_expirations, get_spot, fetch_option_chain_df, fetch_ohlc_data
 from .statistical_engine import calculate_realized_volatility, calculate_garch_forecast, calculate_evt_tail_risk
+from .volatility_engine import generate_volatility_report
 from .config import Config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
-mcp = FastMCP("IndianOptionsGodModeV5_1_RC")
+mcp = FastMCP("IndianOptionsGodModeV5_2")
+
+@mcp.tool()
+def generate_volatility_surface_map(ticker: str, expiry: str) -> dict:
+    """
+    Natenburg-style Volatility Analytics Engine.
+    Fits an SVI surface, checks arbitrage, tracks term structure, and detects mispricings.
+    """
+    try:
+        report = generate_volatility_report(ticker, expiry)
+        return report
+    except Exception as e:
+        logger.error("Volatility Surface generation failed", exc_info=True)
+        return {"status": "SYSTEM_ERROR", "error": str(e)}
 
 @mcp.tool()
 def generate_quant_market_map(ticker: str, expiry: str) -> dict:
@@ -504,16 +883,637 @@ def main():
 if __name__ == "__main__":
     main()
 
+
 ####################################################################################################
-# FILE 11
-# PATH: tests/__init__.py
+# FILE 15
+# PATH: src\indian_options_god_mode\quant_engine.py
+####################################################################################################
+
+import numpy as np
+from datetime import datetime, time, date
+from zoneinfo import ZoneInfo
+from scipy.stats import norm
+from scipy.optimize import brentq
+from .config import Config
+
+IST = ZoneInfo("Asia/Kolkata")
+
+def get_exact_time_to_expiry(expiry_date_str: str) -> float:
+    """Calculates exact time to expiry in years. Raises ValueError on malformed date."""
+    try:
+        try: exp_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+        except ValueError: exp_date = datetime.strptime(expiry_date_str, '%d-%b-%Y').date()
+    except ValueError as e:
+        raise ValueError(f"INVALID_EXPIRY_FORMAT: {expiry_date_str}") from e
+        
+    expiry_dt = datetime.combine(exp_date, time(Config.MARKET_CLOSE_HOUR, Config.MARKET_CLOSE_MINUTE), tzinfo=IST)
+    now = datetime.now(IST)
+    
+    if expiry_dt <= now: return 0.0
+        
+    seconds_remaining = (expiry_dt - now).total_seconds()
+    seconds_in_year = 365.25 * 24 * 3600  # ACT/365.25 convention
+    return seconds_remaining / seconds_in_year
+
+def d1(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+
+def bs_delta(S, K, T, r, sigma, option_type='call', q=0.0):
+    if T <= 0 or sigma <= 0: return 0.0
+    d1_val = d1(S, K, T, r, sigma, q)
+    return np.exp(-q * T) * (norm.cdf(d1_val) if option_type == 'call' else -norm.cdf(-d1_val))
+
+def bs_gamma(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return np.exp(-q * T) * norm.pdf(d1(S, K, T, r, sigma, q)) / (S * sigma * np.sqrt(T))
+
+def bs_vanna(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    d2_val = d1(S, K, T, r, sigma, q) - sigma * np.sqrt(T)
+    return -np.exp(-q * T) * norm.pdf(d2_val) / sigma
+
+def bs_charm(S, K, T, r, sigma, option_type='call', q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    d1_val = d1(S, K, T, r, sigma, q)
+    d2_val = d1_val - sigma * np.sqrt(T)
+    charm = -np.exp(-q * T) * norm.pdf(d1_val) * (2*(r-q)*T - d2_val * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
+    return (charm if option_type == 'call' else -charm) / 365
+
+def calculate_implied_vol(market_price, S, K, T, r, option_type='call', q=0.0):
+    """Brentq solver with strict no-arbitrage bounds."""
+    if market_price <= 0 or T <= 0: return np.nan
+    
+    # No-arbitrage bounds check
+    intrinsic = max(0, S * np.exp(-q*T) - K * np.exp(-r*T)) if option_type == 'call' else max(0, K * np.exp(-r*T) - S * np.exp(-q*T))
+    if market_price < intrinsic:
+        return np.nan  # Price violates BS no-arbitrage bounds
+        
+    def objective(sigma): 
+        d1_val = d1(S, K, T, r, sigma, q)
+        d2_val = d1_val - sigma * np.sqrt(T)
+        if option_type == 'call':
+            p = S * np.exp(-q * T) * norm.cdf(d1_val) - K * np.exp(-r * T) * norm.cdf(d2_val)
+        else:
+            p = K * np.exp(-r * T) * norm.cdf(-d2_val) - S * np.exp(-q * T) * norm.cdf(-d1_val)
+        return p - market_price
+        
+    try: return brentq(objective, 0.001, 5.0)
+    except ValueError: return np.nan
+
+def calculate_gex_at_spot(S_hyp, options_list, T, r, q, lot_size):
+    """Helper for Gamma Flip root finding."""
+    total_gex = 0
+    for opt in options_list:
+        gamma = bs_gamma(S_hyp, opt['K'], T, r, opt['iv'], q)
+        gex = opt['sign'] * gamma * opt['oi'] * lot_size * (S_hyp**2) * 0.01
+        total_gex += gex
+    return total_gex
+
+
+####################################################################################################
+# FILE 16
+# PATH: src\indian_options_god_mode\statistical_engine.py
+####################################################################################################
+
+import numpy as np
+import pandas as pd
+from scipy.stats import genpareto
+from arch import arch_model
+from .config import Config
+
+def calculate_realized_volatility(hist: pd.DataFrame) -> dict:
+    hist = hist.dropna()
+    if len(hist) < 2: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient history"}
+    log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+    rv_30d_cc = np.std(log_returns.tail(30)) * np.sqrt(252) * 100
+    return {"value": round(rv_30d_cc, 2), "status": "CALCULATED"}
+
+def calculate_garch_forecast(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna() * 100
+        res = arch_model(log_returns, vol='Garch', p=1, q=1, rescale=False).fit(disp='off')
+        variance_5d = res.forecast(horizon=5, reindex=False).variance.values[-1].mean()
+        
+        # FIX: Returns are in % (*100), so variance is in (%^2).
+        # Daily vol = sqrt(variance). Annualized vol = sqrt(variance) * sqrt(252)
+        forecast_vol = np.sqrt(variance_5d) * np.sqrt(252)
+        
+        return {"value": round(forecast_vol, 2), "status": "CALCULATED", "method": "GARCH_5D_MEAN_VAR_ANNUALIZED"}
+    except Exception: 
+        return {"value": None, "status": "SYSTEM_ERROR", "reason": "GARCH fit failed"}
+
+def calculate_evt_tail_risk(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+        losses = -log_returns[log_returns < 0]
+        threshold = np.quantile(losses, Config.EVT_THRESHOLD_PERCENTILE)
+        exceedances = losses[losses > threshold] - threshold
+        n_total, n_exc = len(log_returns), len(exceedances)
+        if n_exc < 10: return {"value": None, "status": "DATA_UNAVAILABLE", "reason": "Insufficient exceedances"}
+        shape, loc, scale = genpareto.fit(exceedances, floc=0)
+        p_var = 0.01
+        if abs(shape) < 1e-6:
+            var_99 = threshold + scale * np.log(n_exc / (n_total * p_var))
+            es_99 = var_99 + scale
+        else:
+            var_99 = threshold + (scale / shape) * (((n_exc / (n_total * p_var))**shape) - 1)
+            es_99 = var_99 + (scale + shape * (var_99 - threshold)) / (1 - shape)
+        return {
+            "method": "POT", "threshold_pct": Config.EVT_THRESHOLD_PERCENTILE * 100,
+            "exceedances": n_exc, "shape_xi": round(shape, 4), "scale_beta": round(scale, 4),
+            "var_99_daily_pct": round(var_99 * 100, 2), "es_99_daily_pct": round(es_99 * 100, 2),
+            "status": "CALCULATED"
+        }
+    except Exception: 
+        return {"value": None, "status": "SYSTEM_ERROR", "reason": "EVT failed"}
+
+
+####################################################################################################
+# FILE 17
+# PATH: src\indian_options_god_mode\volatility_engine.py
+####################################################################################################
+
+# src/indian_options_god_mode/volatility_engine.py
+import numpy as np
+from scipy.optimize import minimize
+from .quant_engine import calculate_implied_vol, bs_delta, get_exact_time_to_expiry
+from .data_fetcher import fetch_option_chain_df, get_spot, get_expirations
+
+def svi_total_variance(k, a, b, rho, m, sigma):
+    """SVI Parametrization for total variance (w = sigma^2 * T)."""
+    return a + b * (rho * (k - m) + np.sqrt((k - m)**2 + sigma**2))
+
+def fit_svi_slice(K_array, iv_array, F, T):
+    """Fits SVI parameters to a single expiry slice."""
+    k = np.log(K_array / F)
+    w = (iv_array**2) * T
+    
+    a0 = np.min(w) - 0.01
+    b0, rho0, m0, sig0 = 0.1, -0.2, 0.0, 0.1
+    
+    def objective(params):
+        a, b, rho, m, sigma = params
+        w_model = svi_total_variance(k, a, b, rho, m, sigma)
+        return np.sum((w - w_model)**2)
+        
+    cons = (
+        {'type': 'ineq', 'fun': lambda x: x[1] - 1e-5},
+        {'type': 'ineq', 'fun': lambda x: 1 - abs(x[2]) - 1e-5},
+        {'type': 'ineq', 'fun': lambda x: x[4] - 1e-5},
+        {'type': 'ineq', 'fun': lambda x: (x[0] + x[1] * x[4] * np.sqrt(1 - x[2]**2))}
+    )
+    bounds = [(-1.0, 1.0), (1e-5, 2.0), (-0.999, 0.999), (-1.0, 1.0), (1e-5, 2.0)]
+    
+    res = minimize(objective, [a0, b0, rho0, m0, sig0], method='SLSQP', bounds=bounds, constraints=cons)
+    
+    a, b, rho, m, sigma = res.x
+    w_fit = svi_total_variance(k, a, b, rho, m, sigma)
+    iv_fit = np.sqrt(w_fit / T)
+    return iv_fit, {'a': a, 'b': b, 'rho': rho, 'm': m, 'sigma': sigma}
+
+def check_vertical_arbitrage(df):
+    """Ensures call prices decrease monotonically as strike increases."""
+    calls = df[df['option_type'] == 'call'].sort_values('strike')
+    for i in range(1, len(calls)):
+        if calls.iloc[i]['mid_price'] > calls.iloc[i-1]['mid_price']:
+            return False
+    return True
+
+def generate_volatility_report(ticker: str, expiry: str) -> dict:
+    spot = get_spot(ticker)
+    if spot is None: return {"status": "DATA_UNAVAILABLE", "error": "NSE spot unavailable."}
+        
+    df = fetch_option_chain_df(ticker, expiry)
+    if df.empty: return {"status": "DATA_UNAVAILABLE", "error": "NSE option chain empty."}
+    
+    r, q = 0.07, 0.0
+    try: T = get_exact_time_to_expiry(expiry)
+    except ValueError: return {"status": "INVALID_EXPIRY", "error": "Bad expiry format."}
+        
+    df['mid_price'] = (df['bid'] + df['ask']) / 2
+    df = df[(df['bid'] > 0) & (df['openInterest'] > 0) & (df['mid_price'] > 0)]
+    
+    arb_status = "PASS" if check_vertical_arbitrage(df) else "FAIL"
+    
+    df['market_iv'] = df.apply(lambda row: calculate_implied_vol(
+        row['mid_price'], spot, row['strike'], T, r, row['option_type'], q
+    ), axis=1)
+    df = df.dropna(subset=['market_iv'])
+    
+    K_array = df['strike'].values
+    iv_array = df['market_iv'].values
+    F = spot * np.exp((r-q)*T)
+    
+    iv_fit, svi_params = fit_svi_slice(K_array, iv_array, F, T)
+    df['theoretical_iv'] = iv_fit
+    df['residual_iv'] = df['market_iv'] - df['theoretical_iv']
+    
+    atm_idx = (df['strike'] - spot).abs().idxmin()
+    atm_iv = df.loc[atm_idx, 'market_iv'] * 100
+    
+    def find_delta_iv(opt_type, target_delta):
+        sub = df[df['option_type'] == opt_type].copy()
+        sub['delta'] = sub.apply(lambda row: bs_delta(spot, row['strike'], T, r, row['market_iv'], opt_type, q), axis=1)
+        sub['delta_diff'] = abs(abs(sub['delta']) - target_delta)
+        idx = sub['delta_diff'].idxmin()
+        return sub.loc[idx, 'market_iv'] * 100
+        
+    iv_25c = find_delta_iv('call', 0.25)
+    iv_25p = find_delta_iv('put', 0.25)
+    
+    all_expiries = get_expirations(ticker)
+    term_structure = []
+    for exp in all_expiries[:4]:
+        if exp == expiry: continue
+        try:
+            exp_T = get_exact_time_to_expiry(exp)
+            exp_df = fetch_option_chain_df(ticker, exp)
+            exp_df['mid_price'] = (exp_df['bid'] + exp_df['ask']) / 2
+            exp_df = exp_df[(exp_df['bid'] > 0) & (exp_df['mid_price'] > 0)]
+            exp_df['market_iv'] = exp_df.apply(lambda row: calculate_implied_vol(
+                row['mid_price'], spot, row['strike'], exp_T, r, row['option_type'], q
+            ), axis=1)
+            exp_atm_idx = (exp_df['strike'] - spot).abs().idxmin()
+            exp_atm_iv = exp_df.loc[exp_atm_idx, 'market_iv'] * 100
+            days = int(exp_T * 365)
+            term_structure.append({"expiry": exp, "days": days, "atm_iv": round(exp_atm_iv, 2)})
+        except: pass
+            
+    mispriced = df[df['residual_iv'].abs() > 0.01]
+    mispricing_signals = []
+    for _, row in mispriced.iterrows():
+        mispricing_signals.append({
+            "strike": row['strike'],
+            "type": row['option_type'].upper(),
+            "market_iv": round(row['market_iv'] * 100, 2),
+            "svi_iv": round(row['theoretical_iv'] * 100, 2),
+            "residual": round(row['residual_iv'] * 100, 2)
+        })
+        
+    return {
+        "STATUS": "LIVE_CALCULATED",
+        "VOLATILITY_STRUCTURE": {
+            "ATM_IV": round(atm_iv, 2),
+            "IV_25D_Call": round(iv_25c, 2),
+            "IV_25D_Put": round(iv_25p, 2),
+            "Risk_Reversal_25D": round(iv_25c - iv_25p, 2),
+            "SVI_Params": {k: round(v, 4) for k, v in svi_params.items()}
+        },
+        "TERM_STRUCTURE": term_structure,
+        "ARBITRAGE_CHECK": arb_status,
+        "MISPRICING_SIGNALS": mispricing_signals[:5]
+    }
+
+
+####################################################################################################
+# FILE 18
+# PATH: src\mcp_server.py
+####################################################################################################
+
+import sys, os
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from scipy.optimize import brentq
+from mcp.server.fastmcp import FastMCP
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from quant_engine import (d1, bs_delta, bs_gamma, bs_vanna, bs_charm, 
+                          calculate_implied_vol, get_exact_time_to_expiry, calculate_gex_at_spot)
+from data_fetcher import get_expirations, get_spot, fetch_option_chain_df, fetch_ohlc_data
+from statistical_engine import calculate_realized_volatility, calculate_garch_forecast, calculate_evt_tail_risk
+from config import Config
+
+IST = ZoneInfo("Asia/Kolkata")
+mcp = FastMCP("IndianOptionsGodModeV5_1_RC")
+
+@mcp.tool()
+def generate_quant_market_map(ticker: str, expiry: str) -> dict:
+    """
+    MASTER ORCHESTRATOR: Institutional-grade Quant Market Map.
+    """
+    try:
+        spot = get_spot(ticker)
+        if spot is None: 
+            return {"status": "DATA_UNAVAILABLE", "error": f"NSE API failed to return spot for {ticker}."}
+            
+        df_raw = fetch_option_chain_df(ticker, expiry)
+        if df_raw.empty:
+            return {"status": "DATA_UNAVAILABLE", "error": f"NSE API returned empty option chain."}
+            
+        rows_received = len(df_raw)
+        timestamp = datetime.now(IST).isoformat()
+        
+        # 1. Data Quality Engine
+        df_raw['mid_price'] = (df_raw['bid'] + df_raw['ask']) / 2
+        df_raw['mid_price'] = df_raw['mid_price'].fillna(df_raw['lastPrice'])
+        df_raw['spread_pct'] = (df_raw['ask'] - df_raw['bid']) / df_raw['mid_price']
+        
+        rejection_reasons = {"zero_oi": 0, "zero_bid": 0, "invalid_price": 0, "wide_spread": 0, "invalid_iv": 0}
+        
+        df = df_raw.copy()
+        rejection_reasons["zero_oi"] = len(df[df['openInterest'] <= Config.MIN_OI])
+        df = df[df['openInterest'] > Config.MIN_OI]
+        
+        rejection_reasons["zero_bid"] = len(df[df['bid'] < Config.MIN_BID])
+        df = df[df['bid'] >= Config.MIN_BID]
+        
+        rejection_reasons["invalid_price"] = len(df[df['mid_price'] <= 0])
+        df = df[df['mid_price'] > 0]
+        
+        rejection_reasons["wide_spread"] = len(df[df['spread_pct'] > Config.MAX_SPREAD_PCT])
+        df = df[df['spread_pct'] <= Config.MAX_SPREAD_PCT]
+        
+        rows_used = len(df)
+        if rows_used < 10: return {"status": "DATA_QUALITY_FAILURE", "error": "Insufficient liquid contracts."}
+            
+        # 2. Time & Models
+        T = get_exact_time_to_expiry(expiry)
+        r, q = Config.RISK_FREE_RATE, Config.DIVIDEND_YIELD
+        
+        hist_df = fetch_ohlc_data(ticker, "1y")
+        rv_stats = calculate_realized_volatility(hist_df)
+        garch_stats = calculate_garch_forecast(hist_df)
+        evt_stats = calculate_evt_tail_risk(hist_df)
+        
+        # 3. Options Processing
+        total_call_gex, total_put_gex = 0, 0
+        total_vanna, total_charm = 0, 0
+        valid_options_list = []
+        
+        atm_call_iv, atm_put_iv = 0.0, 0.0
+        iv_25d_call, iv_25d_put = 0.0, 0.0
+        min_diff_atm, min_diff_25c, min_diff_25p = float('inf'), float('inf'), float('inf')
+        
+        for _, row in df.iterrows():
+            K, oi, opt_type = row['strike'], row['openInterest'], row['option_type']
+            iv = calculate_implied_vol(row['mid_price'], spot, K, T, r, opt_type, q)
+            if np.isnan(iv): 
+                rejection_reasons["invalid_iv"] += 1
+                continue
+                
+            gamma = bs_gamma(spot, K, T, r, iv, q)
+            
+            # Explicit Sign Mapping: Dealer short calls (-1), long puts (+1)
+            sign = -1 if opt_type == 'call' else 1
+            gex = sign * gamma * oi * Config.LOT_SIZE * (spot**2) * 0.01
+            
+            if opt_type == 'call': total_call_gex += gex
+            else: total_put_gex += gex
+            
+            # Higher Order Greeks Exposure
+            total_vanna += bs_vanna(spot, K, T, r, iv, q) * oi * Config.LOT_SIZE * sign
+            total_charm += bs_charm(spot, K, T, r, iv, opt_type, q) * oi * Config.LOT_SIZE * sign
+            
+            valid_options_list.append({'K': K, 'oi': oi, 'iv': iv, 'type': opt_type, 'sign': sign})
+            
+            # IV Surface
+            if opt_type == 'call':
+                diff = abs(spot - K)
+                if diff < min_diff_atm: atm_call_iv = iv * 100; min_diff_atm = diff
+                diff_d = abs(bs_delta(spot, K, T, r, iv, 'call', q) - 0.25)
+                if diff_d < min_diff_25c: iv_25d_call = iv * 100; min_diff_25c = diff_d
+            else:
+                diff = abs(spot - K)
+                if diff < min_diff_atm: atm_put_iv = iv * 100; min_diff_atm = diff
+                diff_d = abs(bs_delta(spot, K, T, r, iv, 'put', q) + 0.25)
+                if diff_d < min_diff_25p: iv_25d_put = iv * 100; min_diff_25p = diff_d
+
+        atm_iv_mid = (atm_call_iv + atm_put_iv) / 2
+        
+        # 4. Model Gamma Flip
+        gamma_flip = None
+        try:
+            lower_bound, upper_bound = spot * 0.90, spot * 1.10
+            gex_low = calculate_gex_at_spot(lower_bound, valid_options_list, T, r, q, Config.LOT_SIZE)
+            gex_high = calculate_gex_at_spot(upper_bound, valid_options_list, T, r, q, Config.LOT_SIZE)
+            if gex_low * gex_high < 0:
+                gamma_flip = brentq(calculate_gex_at_spot, lower_bound, upper_bound, 
+                                    args=(valid_options_list, T, r, q, Config.LOT_SIZE))
+        except Exception: pass
+
+        # 5. Map Construction
+        rv_30d = rv_stats.get("rv_30d_close_to_close", 0)
+        iv_rv_spread = atm_iv_mid - rv_30d
+        
+        quant_map = {
+            "STATUS": "LIVE_CALCULATED",
+            "MODEL_VERSION": "5.1.0",
+            "MODEL_INPUTS": {
+                "risk_free_rate": r,
+                "risk_free_rate_source": "CONFIG_STATIC",
+                "lot_size": Config.LOT_SIZE,
+                "lot_size_source": "CONFIG_STATIC",
+                "time_convention": "ACT/365.25 calendar seconds",
+                "timezone": "Asia/Kolkata"
+            },
+            "PROVENANCE": {
+                "source": "NSE_DIRECT",
+                "timestamp": timestamp,
+                "rows_received": rows_received,
+                "rows_used": rows_used,
+                "rejection_reasons": rejection_reasons
+            },
+            "DATA_CLASSIFICATION": {
+                "Spot": "OBSERVED",
+                "OI": "OBSERVED",
+                "IV": "DERIVED",
+                "GEX": "INFERRED",
+                "Dealer_Position": "ASSUMED",
+                "Gamma_Flip": "MODEL_DERIVED"
+            },
+            "VOLATILITY_STATE": {
+                "ATM_Call_IV": round(atm_call_iv, 2),
+                "ATM_Put_IV": round(atm_put_iv, 2),
+                "ATM_IV_Mid": round(atm_iv_mid, 2),
+                "IV_25D_Call": round(iv_25d_call, 2),
+                "IV_25D_Put": round(iv_25d_put, 2),
+                "Risk_Reversal_25D": round(iv_25d_call - iv_25d_put, 2),
+                "RV_30D": rv_30d,
+                "GARCH_5D": garch_stats.get("garch_5d_forecast_vol", 0),
+                "IV_RV_Spread": round(iv_rv_spread, 2)
+            },
+            "POSITIONING_INFERENCE": {
+                "Total_Proxy_GEX": round(total_call_gex + total_put_gex, 2),
+                "Call_GEX": round(total_call_gex, 2),
+                "Put_GEX": round(total_put_gex, 2),
+                "Total_Vanna": round(total_vanna, 2),
+                "Total_Charm_Daily": round(total_charm, 4),
+                "Gamma_Regime": "Short Gamma (Trend)" if (total_call_gex + total_put_gex) < 0 else "Long Gamma (Mean Revert)",
+                "Model_Gamma_Flip_Level": round(gamma_flip, 2) if gamma_flip else "NOT_CALCULATED",
+                "gamma_flip_method": "BS_gamma_static_IV_spot_scan",
+                "positioning_assumption": {
+                    "call_sign": -1,
+                    "put_sign": +1,
+                    "interpretation": "Dealer short calls / long puts",
+                    "observed_dealer_positioning": False
+                }
+            },
+            "TAIL_RISK": evt_stats
+        }
+        return quant_map
+        
+    except Exception as e:
+        return {"status": "SYSTEM_ERROR", "error": str(e)}
+
+if __name__ == "__main__":
+    mcp.run()
+
+
+####################################################################################################
+# FILE 19
+# PATH: src\quant_engine.py
+####################################################################################################
+
+import math
+import numpy as np
+from datetime import datetime, time, date
+from zoneinfo import ZoneInfo
+from scipy.stats import norm
+from scipy.optimize import brentq
+import sys, os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import Config
+
+IST = ZoneInfo("Asia/Kolkata")
+
+def get_exact_time_to_expiry(expiry_date_str: str) -> float:
+    """Calculates exact time to expiry in years based on seconds remaining to 15:30 IST."""
+    try:
+        try: exp_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+        except ValueError: exp_date = datetime.strptime(expiry_date_str, '%d-%b-%Y').date()
+    except ValueError:
+        return 1 / 365.0 
+        
+    expiry_dt = datetime.combine(exp_date, time(Config.MARKET_CLOSE_HOUR, Config.MARKET_CLOSE_MINUTE), tzinfo=IST)
+    now = datetime.now(IST)
+    
+    if expiry_dt <= now: return 0.0
+        
+    seconds_remaining = (expiry_dt - now).total_seconds()
+    seconds_in_year = 365.25 * 24 * 3600  # ACT/365.25 calendar convention
+    return seconds_remaining / seconds_in_year
+
+def d1(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+
+def bs_delta(S, K, T, r, sigma, option_type='call', q=0.0):
+    if T <= 0 or sigma <= 0: return 0.0
+    d1_val = d1(S, K, T, r, sigma, q)
+    return np.exp(-q * T) * (norm.cdf(d1_val) if option_type == 'call' else -norm.cdf(-d1_val))
+
+def bs_gamma(S, K, T, r, sigma, q=0.0):
+    if T <= 0 or sigma <= 0: return 0
+    return np.exp(-q * T) * norm.pdf(d1(S, K, T, r, sigma, q)) / (S * sigma * np.sqrt(T))
+
+def bs_vanna(S, K, T, r, sigma, q=0.0):
+    """dDelta/dVol. Unit: Delta per 1.00 (100%) change in vol."""
+    if T <= 0 or sigma <= 0: return 0
+    d2_val = d1(S, K, T, r, sigma, q) - sigma * np.sqrt(T)
+    return -np.exp(-q * T) * norm.pdf(d2_val) / sigma
+
+def bs_charm(S, K, T, r, sigma, option_type='call', q=0.0):
+    """dDelta/dTime. Unit: Delta decay per calendar day."""
+    if T <= 0 or sigma <= 0: return 0
+    d1_val = d1(S, K, T, r, sigma, q)
+    d2_val = d1_val - sigma * np.sqrt(T)
+    charm = -np.exp(-q * T) * norm.pdf(d1_val) * (2*(r-q)*T - d2_val * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
+    return (charm if option_type == 'call' else -charm) / 365
+
+def calculate_implied_vol(market_price, S, K, T, r, option_type='call', q=0.0):
+    if market_price <= 0 or T <= 0: return np.nan
+    def objective(sigma): 
+        d1_val = d1(S, K, T, r, sigma, q)
+        d2_val = d1_val - sigma * np.sqrt(T)
+        if option_type == 'call':
+            p = S * np.exp(-q * T) * norm.cdf(d1_val) - K * np.exp(-r * T) * norm.cdf(d2_val)
+        else:
+            p = K * np.exp(-r * T) * norm.cdf(-d2_val) - S * np.exp(-q * T) * norm.cdf(-d1_val)
+        return p - market_price
+    try: return brentq(objective, 0.001, 5.0)
+    except ValueError: return np.nan
+
+def calculate_gex_at_spot(S_hyp, options_list, T, r, q, lot_size):
+    """Helper function to calculate Total GEX at a hypothetical spot price."""
+    total_gex = 0
+    for opt in options_list:
+        gamma = bs_gamma(S_hyp, opt['K'], T, r, opt['iv'], q)
+        # Sign convention: -1 for calls, +1 for puts
+        gex = opt['sign'] * gamma * opt['oi'] * lot_size * (S_hyp**2) * 0.01
+        total_gex += gex
+    return total_gex
+
+
+####################################################################################################
+# FILE 20
+# PATH: src\statistical_engine.py
+####################################################################################################
+
+import numpy as np
+import pandas as pd
+from scipy.stats import genpareto
+from arch import arch_model
+import sys, os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import Config
+
+def calculate_realized_volatility(hist: pd.DataFrame) -> dict:
+    hist = hist.dropna()
+    if len(hist) < 2: return {"error": "Insufficient historical data"}
+    log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+    rv_30d_cc = np.std(log_returns.tail(30)) * np.sqrt(252) * 100  # 252 trading days convention
+    return {"rv_30d_close_to_close": round(rv_30d_cc, 2)}
+
+def calculate_garch_forecast(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna() * 100
+        res = arch_model(log_returns, vol='Garch', p=1, q=1, rescale=False).fit(disp='off')
+        variance_5d = res.forecast(horizon=5, reindex=False).variance.values[-1].mean()
+        return {"garch_5d_forecast_vol": round(np.sqrt(variance_5d / 100 * 252) * 100, 2)}
+    except Exception: return {"error": "GARCH fit failed"}
+
+def calculate_evt_tail_risk(hist: pd.DataFrame) -> dict:
+    try:
+        log_returns = np.log(hist['Close'] / hist['Close'].shift(1)).dropna()
+        losses = -log_returns[log_returns < 0]
+        threshold = np.quantile(losses, Config.EVT_THRESHOLD_PERCENTILE)
+        exceedances = losses[losses > threshold] - threshold
+        n_total, n_exc = len(log_returns), len(exceedances)
+        if n_exc < 10: return {"error": "Insufficient exceedances"}
+        shape, loc, scale = genpareto.fit(exceedances, floc=0)
+        p_var = 0.01
+        if abs(shape) < 1e-6:
+            var_99 = threshold + scale * np.log(n_exc / (n_total * p_var))
+            es_99 = var_99 + scale
+        else:
+            var_99 = threshold + (scale / shape) * (((n_exc / (n_total * p_var))**shape) - 1)
+            es_99 = var_99 + (scale + shape * (var_99 - threshold)) / (1 - shape)
+        return {
+            "method": "POT", "threshold_pct": Config.EVT_THRESHOLD_PERCENTILE * 100,
+            "exceedances": n_exc, "shape_xi": round(shape, 4), "scale_beta": round(scale, 4),
+            "var_99_daily_pct": round(var_99 * 100, 2), "es_99_daily_pct": round(es_99 * 100, 2)
+        }
+    except Exception: return {"error": "EVT failed"}
+
+
+####################################################################################################
+# FILE 21
+# PATH: tests\__init__.py
 ####################################################################################################
 
 # Empty init file
 
+
 ####################################################################################################
-# FILE 12
-# PATH: tests/test_greeks.py
+# FILE 22
+# PATH: tests\test_greeks.py
 ####################################################################################################
 
 import pytest
@@ -577,9 +1577,92 @@ def test_iv_inversion_and_bounds():
     # Test arbitrage bound rejection
     assert np.isnan(calculate_implied_vol(0.01, S, K, T, r, 'call', q))
 
+
 ####################################################################################################
-# FILE 13
-# PATH: tests/test_statistical_engine.py
+# FILE 23
+# PATH: tests\test_quant_engine.py
+####################################################################################################
+
+import pytest
+import sys
+import os
+
+# Add parent directory to path to import modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.quant_engine import (bs_delta, bs_gamma, bs_vanna, bs_charm, calculate_implied_vol, 
+                              calculate_gex_at_spot, get_exact_time_to_expiry)
+from datetime import datetime, timedelta
+
+# Standard test parameters
+S = 24000
+K = 24000
+T = 7 / 365
+r = 0.07
+sigma = 0.12
+q = 0.0
+
+def test_delta_bounds():
+    """Delta should be between 0 and 1 for calls, -1 and 0 for puts."""
+    call_delta = bs_delta(S, K, T, r, sigma, 'call', q)
+    put_delta = bs_delta(S, K, T, r, sigma, 'put', q)
+    assert 0 <= call_delta <= 1
+    assert -1 <= put_delta <= 0
+
+def test_put_call_parity():
+    """Call Delta - Put Delta should equal e^(-qT) (approx 1 for q=0)."""
+    call_delta = bs_delta(S, K, T, r, sigma, 'call', q)
+    put_delta = bs_delta(S, K, T, r, sigma, 'put', q)
+    assert abs((call_delta - put_delta) - 1.0) < 0.01
+
+def test_gamma_positive():
+    """Gamma must always be positive."""
+    gamma = bs_gamma(S, K, T, r, sigma, q)
+    assert gamma > 0
+
+def test_iv_inversion():
+    """Calculating IV from a BS price should return the original sigma."""
+    from scipy.stats import norm
+    import numpy as np
+    d1_val = (np.log(S / K) + (r - q + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+    d2_val = d1_val - sigma * np.sqrt(T)
+    call_price = S * np.exp(-q * T) * norm.cdf(d1_val) - K * np.exp(-r * T) * norm.cdf(d2_val)
+    
+    calculated_iv = calculate_implied_vol(call_price, S, K, T, r, 'call', q)
+    assert abs(calculated_iv - sigma) < 0.0001
+
+def test_gex_conservation():
+    """Total GEX must equal Call GEX + Put GEX."""
+    options_list = [
+        {'K': 23000, 'oi': 1000, 'iv': 0.15, 'type': 'put'},
+        {'K': 24000, 'oi': 1500, 'iv': 0.12, 'type': 'call'},
+        {'K': 25000, 'oi': 800, 'iv': 0.14, 'type': 'call'}
+    ]
+    lot_size = 25
+    total_gex = calculate_gex_at_spot(S, options_list, T, r, q, lot_size)
+    
+    # Since calculate_gex_at_spot sums internally, we validate the logic:
+    # Call GEX is negative, Put GEX is positive.
+    call_opts = [o for o in options_list if o['type'] == 'call']
+    put_opts = [o for o in options_list if o['type'] == 'put']
+    
+    call_gex = calculate_gex_at_spot(S, call_opts, T, r, q, lot_size)
+    put_gex = calculate_gex_at_spot(S, put_opts, T, r, q, lot_size)
+    
+    assert abs(total_gex - (call_gex + put_gex)) < 1e-6
+    assert call_gex < 0  # Dealers short calls
+    assert put_gex > 0   # Dealers short puts
+
+def test_time_to_expiry_zero():
+    """Time to expiry should be 0 for past dates."""
+    past_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    T = get_exact_time_to_expiry(past_date)
+    assert T == 0.0
+
+
+####################################################################################################
+# FILE 24
+# PATH: tests\test_statistical_engine.py
 ####################################################################################################
 
 import pytest
@@ -612,36 +1695,58 @@ def test_evt_pot_calculation():
     assert res['status'] == 'CALCULATED'
     assert res['shape_xi'] > 0  # Fat tails
 
+
 ####################################################################################################
-# FILE 14
-# PATH: .github/workflows/tests.yml
+# FILE 25
+# PATH: web_app.py
 ####################################################################################################
 
-name: Tests
+# src/indian_options_god_mode/web_app.py
+import logging
+from fastapi import FastAPI, HTTPException
+from .mcp_server import generate_quant_market_map
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from .mcp_server import generate_quant_market_map
 
-on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+logger = logging.getLogger(__name__)
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+# Create the FastAPI app
+app = FastAPI(title="Indian Options God Mode API")
 
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .
-        
-    - name: Run tests
-      run: |
-        pytest tests/
+# Add CORS so your website (even on localhost) can call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change this to your website URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Pydantic model for incoming REST requests
+class QuantMapRequest(BaseModel):
+    ticker: str
+    expiry: str
+
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Indian Options God Mode API is running."}
+
+@app.post("/api/quant-map")
+def get_quant_map(request: QuantMapRequest):
+    """
+    REST endpoint for n8n and Websites to call.
+    """
+    logger.info(f"API Request received: {request.ticker} {request.expiry}")
+    try:
+        # Call the exact same function your MCP tool uses!
+        result = generate_quant_market_map(request.ticker, request.expiry)
+        if "error" in result or "status" in result and result["status"] != "LIVE_CALCULATED":
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except Exception as e:
+        logger.error("API execution failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Optional: You can still mount the MCP SSE transport here if needed,
+# but for n8n/websites, the REST endpoint above is what you will use.
