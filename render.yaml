@@ -1,0 +1,13 @@
+# render.yaml
+services:
+  - type: web
+    name: indian-options-god-mode
+    env: python
+    region: singapore # Choose the region closest to you
+    plan: free # This makes it 100% free!
+    buildCommand: pip install -e .
+    startCommand: uvicorn src.indian_options_god_mode.web_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
