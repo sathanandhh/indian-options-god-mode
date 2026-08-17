@@ -1,7 +1,7 @@
 class Config:
-    RISK_FREE_RATE = 0.07       # Static config
-    DIVIDEND_YIELD = 0.0
-    LOT_SIZE = 25               # Static config
+    RISK_FREE_RATE = float(os.getenv("RISK_FREE_RATE", 0.07))
+    DIVIDEND_YIELD = float(os.getenv("DIVIDEND_YIELD", 0.0))
+    LOT_SIZE = int(os.getenv("LOT_SIZE", 25))
     MARKET_CLOSE_HOUR = 15
     MARKET_CLOSE_MINUTE = 30
     
