@@ -1,3 +1,5 @@
+##
+
 import numpy as np
 import pandas as pd
 import logging
@@ -10,13 +12,27 @@ from .quant_engine import (bs_delta, bs_gamma, bs_vanna, bs_charm,
                            calculate_implied_vol, get_exact_time_to_expiry, calculate_gex_at_spot)
 from .data_fetcher import get_expirations, get_spot, fetch_option_chain_df, fetch_ohlc_data
 from .statistical_engine import calculate_realized_volatility, calculate_garch_forecast, calculate_evt_tail_risk
+from .volatility_engine import generate_volatility_report
 from .config import Config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
-mcp = FastMCP("IndianOptionsGodModeV5_1_RC")
+mcp = FastMCP("IndianOptionsGodModeV5_2")
+
+@mcp.tool()
+def generate_volatility_surface_map(ticker: str, expiry: str) -> dict:
+    """
+    Natenburg-style Volatility Analytics Engine.
+    Fits an SVI surface, checks arbitrage, tracks term structure, and detects mispricings.
+    """
+    try:
+        report = generate_volatility_report(ticker, expiry)
+        return report
+    except Exception as e:
+        logger.error("Volatility Surface generation failed", exc_info=True)
+        return {"status": "SYSTEM_ERROR", "error": str(e)}
 
 @mcp.tool()
 def generate_quant_market_map(ticker: str, expiry: str) -> dict:
